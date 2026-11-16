@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { openStore } from './store.mjs';
 import { validateRecord, product } from './domain.mjs';
+import { collectExport } from './collect.mjs';
 
 export async function readJson(request, limit = 8 * 1024 * 1024) {
   const chunks = [];
@@ -32,6 +33,16 @@ export async function startApplication({ directory, port = 0, host = '127.0.0.1'
         const { key, record } = validateRecord(input.record);
         const receipt = await store.accept(key, record, input.evidence);
         return sendJson(response, receipt.duplicate ? 200 : 201, receipt);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/collect') {
+        const input = await readJson(request);
+        if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+          throw Object.assign(new Error('请求必须是JSON对象'), { status: 422 });
+        }
+        const { record, evidence, intake } = await collectExport({ source: input.source, exportId: input.export ?? '17' });
+        const { key, record: validRecord } = validateRecord(record);
+        const receipt = await store.accept(key, validRecord, evidence);
+        return sendJson(response, receipt.duplicate ? 200 : 201, { ...receipt, intake });
       }
       if (request.method === 'GET' && url.pathname === '/api/records') return sendJson(response, 200, store.list());
       if (request.method === 'GET' && url.pathname === '/api/history') return sendJson(response, 200, store.history(url.searchParams.get('key')));
